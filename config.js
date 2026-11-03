@@ -1,10 +1,9 @@
-// Paste your Firebase web config here (Firebase console → Project settings → Your apps → Web).
-// This config is NOT a secret — access is controlled by the database rules.
-// Leave it empty to run in LOCAL TEST MODE (two tabs in the same browser).
+// Firebase web config. This is NOT a secret — access is controlled by the database rules.
+// Empty databaseURL = LOCAL TEST MODE (two tabs in the same browser).
 export const FIREBASE_CONFIG = {
-  // apiKey: "...",
-  // authDomain: "...",
-  // databaseURL: "https://YOUR-PROJECT-default-rtdb.europe-west1.firebasedatabase.app",
-  // projectId: "...",
-  // appId: "..."
+  apiKey: "AIzaSyCrFO2Ao6O7akvki0U80FRPkGs3PJcYezo",
+  authDomain: "ipad-prompter.firebaseapp.com",
+  databaseURL: "https://ipad-prompter-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "ipad-prompter",
+  appId: "1:3818503484:web:4da3c4be623d37f05c7239"
 };
