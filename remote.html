@@ -1,90 +1,363 @@
 <!doctype html>
-<html lang="ka">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0b0c">
 <title>Prompter — remote</title>
+<link rel="stylesheet" href="design/tokens.css">
+<link rel="stylesheet" href="design/components.css">
 <style>
-  body { font-family: system-ui, sans-serif; background:#111; color:#eee; margin:0; padding:12px; display:grid; gap:12px; }
-  textarea { width:100%; box-sizing:border-box; height:28vh; font-size:16px; background:#1c1c1c; color:#eee; border:1px solid #333; border-radius:8px; padding:8px; }
-  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  button { font-size:18px; padding:12px 16px; border-radius:10px; border:0; background:#333; color:#fff; }
-  #play { background:#2a6; flex:1; font-size:22px; }
-  label { display:flex; gap:8px; align-items:center; flex:1; min-width:220px; }
-  input[type=range] { flex:1; }
-  #jog { height:160px; border-radius:12px; background:#1c1c1c; border:1px dashed #555; display:grid; place-items:center; touch-action:none; user-select:none; }
-  #progress { height:24px; background:#222; border-radius:6px; position:relative; cursor:pointer; }
-  #bar { position:absolute; left:0; top:0; bottom:0; background:#2a6; border-radius:6px; width:0; }
-  #dot { display:inline-block; width:10px; height:10px; border-radius:50%; background:#c33; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-ui); overflow: hidden;
+               overscroll-behavior: none; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+  button { font-family: inherit; }
+  .app { position: relative; height: 100dvh; display: flex; }
+
+  /* Main control screen: phone, top to bottom. It never scrolls. */
+  .main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--space-3); box-sizing: border-box; width: 100%; max-width: 640px; margin: 0 auto;
+          padding: var(--space-4); padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom)); }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 40px; }
+  .top .who { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+  .room { display: flex; flex-direction: column; }
+  .room b { font: 600 18px/22px var(--font-ui); letter-spacing: .1em; font-variant-numeric: tabular-nums; }
+  .state { font: 500 28px/32px var(--font-ui); min-height: 32px; }
+  .main .p-seek { min-width: 0; }
+  .main .p-seek__hit { height: 44px; }
+  .main .p-pad { flex: 1; height: auto; min-height: 180px; }
+  .speed .p-step { min-width: 0; }
+  .speed .p-step__row .p-step__val { text-align: center; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+  .row .p-btn { width: 100%; padding: 0 var(--space-3); }
+  .main .p-play { width: 100%; min-width: 0; }
+
+  /* Look panel: bottom sheet on the phone, permanent right column on the laptop. */
+  .look { position: fixed; left: 0; right: 0; bottom: 0; max-height: 88dvh; display: flex; flex-direction: column; z-index: 20;
+          background: var(--surface-1); border: 1.5px solid var(--line-strong); border-bottom: 0; border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+          transform: translateY(100%); visibility: hidden;
+          transition: transform var(--dur-exit) var(--ease-out), visibility 0s linear var(--dur-exit); }
+  .look.open { transform: none; visibility: visible; transition: transform var(--dur-enter) var(--ease-out), visibility 0s; }
+  .dim { position: fixed; inset: 0; z-index: 10; background: rgba(0,0,0,.6); opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out); }
+  .dim.open { opacity: 1; pointer-events: auto; }
+  .grip { height: 28px; display: flex; align-items: center; justify-content: center; touch-action: none; cursor: grab; }
+  .grip i { width: 48px; height: 5px; border-radius: 3px; background: var(--line-strong); }
+  .look__head { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-4) var(--space-2); }
+  .look__head h2 { margin: 0; font: 600 24px/28px var(--font-ui); }
+  .look__body { overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: var(--space-5);
+                padding: var(--space-2) var(--space-4) calc(var(--space-5) + env(safe-area-inset-bottom)); }
+  .group { display: flex; flex-direction: column; gap: var(--space-2); }
+  .group > .p-cap { text-transform: none; }
+  .ta { width: 100%; box-sizing: border-box; min-height: 140px; max-height: 34dvh; resize: vertical; padding: var(--space-3); user-select: text; -webkit-user-select: text;
+        font: 500 16px/1.5 var(--font-script); color: var(--text); background: var(--surface-2); border: 1.5px solid var(--line-strong); border-radius: var(--radius-md); }
+  .ta::placeholder { color: var(--text-muted); }
+  .ta:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+  .toggles { display: flex; flex-direction: column; gap: var(--space-3); }
+  .look .p-step, .look .p-toggle { min-width: 0; }
+  .keys { color: var(--text-muted); display: none; }
+
+  @media (max-width: 899px) and (prefers-reduced-motion: reduce) {
+    .look { transform: none; opacity: 0; transition: opacity 150ms ease-out, visibility 0s linear 150ms; }
+    .look.open { opacity: 1; transition: opacity 150ms ease-out, visibility 0s; }
+  }
+
+  /* Laptop: controls left, Look permanent on the right. Nothing opens. */
+  @media (min-width: 900px) {
+    .app { justify-content: center; gap: var(--space-6); padding: var(--space-6); box-sizing: border-box; }
+    .main { flex: none; width: 520px; margin: 0; padding: 0; }
+    .look { position: static; transform: none; visibility: visible; opacity: 1; width: 380px; max-height: none; border: 1.5px solid var(--line-strong); border-radius: var(--radius-lg); transition: none; }
+    .grip, .look__head .p-btn, .dim, #lookBtn { display: none; }
+    .look__head { padding-top: var(--space-4); }
+    .row { grid-template-columns: 1fr; }
+    .speed { max-width: 420px; }
+    .ta { min-height: 200px; }
+    .keys { display: block; }
+  }
 </style>
 </head>
 <body>
-<div class="row"><span id="dot"></span> Room <b id="room"></b> <span id="mode"></span></div>
-<textarea id="text" placeholder="Paste or type your script here (ქართული / English)"></textarea>
-<div class="row">
-  <button id="play">▶ Play</button>
-  <button id="top">⤒ Top</button>
-  <button id="mirror">Mirror: off</button>
+<div class="app">
+  <main class="main">
+    <header class="top">
+      <div class="who"><span id="markSlot"></span><div class="room"><span class="p-cap">Room <span id="mode"></span></span><b id="room"></b></div></div>
+      <span id="chip"></span>
+    </header>
+
+    <div class="state" id="state" aria-live="polite">Paused</div>
+
+    <button class="p-seek" id="seek" aria-label="Position in the script. Tap to jump.">
+      <span class="p-seek__hit"><span class="p-seek__track"><span class="p-seek__fill" id="fill" style="width:0"></span></span></span>
+      <span class="p-seek__read"><span id="pct">0%</span><span id="eta">—</span></span>
+    </button>
+
+    <div class="p-pad" id="pad" tabindex="0" role="slider" aria-label="Script: tap for one line, hold and drag to scroll" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <div class="p-pad__t" id="padTxt"></div>
+      <div class="p-pad__m" id="mk"></div>
+      <button class="p-pad__h" id="hd" aria-label="Move start line"></button>
+      <div class="p-pad__hint" id="hint"></div>
+      <span class="p-pad__c" id="ci"><svg id="au" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg><svg id="ad" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+    </div>
+
+    <div class="speed" id="speedSlot"></div>
+
+    <div class="row">
+      <button class="p-btn" id="top"></button>
+      <button class="p-btn" id="lookBtn" aria-haspopup="dialog"></button>
+    </div>
+
+    <button class="p-play" id="play"></button>
+  </main>
+
+  <div class="dim" id="dim"></div>
+  <aside class="look" id="look" aria-label="Look and script">
+    <div class="grip" id="grip"><i></i></div>
+    <div class="look__head"><h2>Look</h2><button class="p-btn" id="closeLook"></button></div>
+    <div class="look__body" id="lookBody">
+      <div class="group"><span class="p-cap">Script text</span><textarea class="ta" id="text" spellcheck="false" placeholder="Paste or type your script here (ქართული / English)"></textarea></div>
+      <div class="group" id="steppers"></div>
+      <div class="toggles" id="toggles"></div>
+      <p class="p-cap keys">Keys: Space play or pause · ↑ ↓ speed · 0 back to top</p>
+    </div>
+  </aside>
 </div>
-<div class="row">
-  <label>Speed <input id="speed" type="range" min="0.5" max="10" step="0.5" value="3"><span id="speedV">3</span></label>
-  <label>Font <input id="font" type="range" min="24" max="160" step="2" value="64"><span id="fontV">64</span></label>
-  <label>Margin <input id="margin" type="range" min="0" max="30" step="1" value="8"><span id="marginV">8</span></label>
-</div>
-<div id="progress"><div id="bar"></div></div>
-<div id="jog">Drag up / down here to scroll manually</div>
 
 <script type="module">
 import { connect, getRoom } from './sync.js';
+import { markSvg, ICON } from './common.js';
+
 const $ = (id) => document.getElementById(id);
 const room = getRoom();
+if (!room) location.replace('./');
 $('room').textContent = room;
+$('markSlot').innerHTML = markSvg(32);
+$('top').innerHTML = ICON.top + 'Back to top';
+$('lookBtn').innerHTML = ICON.look + 'Look';
+$('closeLook').innerHTML = ICON.close + 'Close';
+$('hd').innerHTML = ICON.grip + 'Start line';
+$('hint').innerHTML = ICON.updown + 'Tap one line · hold and drag for speed';
+
+// ---- settings: defaults, remembered on this device, seeded into a new room ----
+const DEF = { text: '', fontSize: 56, lineSpacing: 1.4, margin: 8, speed: 3, playing: false, mirror: false, readingLine: true, startLine: 30 };
+const SAVE_KEY = 'prompter-remote-settings';
+const REMEMBER = ['text', 'fontSize', 'lineSpacing', 'margin', 'speed', 'mirror', 'readingLine', 'startLine'];
+let saved = {};
+try { saved = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}'); } catch {}
+const s = { ...DEF };
+const remember = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(Object.fromEntries(REMEMBER.map((k) => [k, s[k]])))); } catch {} };
 
 const sync = await connect(room);
-$('mode').textContent = sync.mode === 'local' ? '(local test mode)' : '';
-sync.onConnection((ok) => $('dot').style.background = ok ? '#2a2' : '#c33');
+if (sync.mode === 'local') $('mode').textContent = '· test mode';
+const paints = [];
+function push(patch) { Object.assign(s, patch); sync.set('state', patch); remember(); paint(); }
 
-const s = { text: '', fontSize: 64, speed: 3, playing: false, mirror: false, margin: 8 };
-const push = (patch) => { Object.assign(s, patch); sync.set('state', patch); paint(); };
+// ---- Look panel controls ----
+function hold(btn, fn) {
+  let t, i; const stop = () => { clearTimeout(t); clearInterval(i); };
+  btn.addEventListener('pointerdown', () => { fn(); t = setTimeout(() => { i = setInterval(fn, 110); }, 400); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((e) => btn.addEventListener(e, stop));
+  btn.addEventListener('click', (e) => { if (e.detail === 0) fn(); });   // keyboard activation
+}
+function stepper(label, key, min, max, step, fmt, unit) {
+  const el = document.createElement('div'); el.className = 'p-step';
+  el.innerHTML = `<span class="p-step__label">${label}</span><div class="p-step__row"><button class="p-step__btn" aria-label="${label}, less">${ICON.minus}</button><span class="p-step__val"></span><button class="p-step__btn" aria-label="${label}, more">${ICON.plus}</button></div>`;
+  const [dec, inc] = el.querySelectorAll('button'), val = el.querySelector('.p-step__val');
+  const change = (d) => { const v = Math.min(max, Math.max(min, +(s[key] + d * step).toFixed(2))); if (v !== s[key]) push({ [key]: v }); };
+  hold(dec, () => change(-1)); hold(inc, () => change(1));
+  paints.push(() => { val.innerHTML = fmt(s[key]) + (unit ? `<span class="p-step__unit">${unit}</span>` : ''); });
+  return el;
+}
+function toggle(label, key) {
+  const el = document.createElement('button'); el.className = 'p-toggle';
+  el.innerHTML = `<span>${label}</span><span class="p-toggle__state"></span><span class="p-toggle__track"></span>`;
+  el.onclick = () => push({ [key]: !s[key] });
+  paints.push(() => { el.setAttribute('aria-pressed', String(!!s[key])); el.querySelector('.p-toggle__state').textContent = s[key] ? 'On' : 'Off'; });
+  return el;
+}
+$('speedSlot').append(stepper('Speed', 'speed', 0.5, 10, 0.5, (v) => v.toFixed(1), ''));
+$('steppers').append(
+  stepper('Font size', 'fontSize', 32, 120, 4, String, 'px'),
+  stepper('Line spacing', 'lineSpacing', 1.2, 2, 0.1, (v) => v.toFixed(1), '×'),
+  stepper('Margins', 'margin', 0, 30, 2, String, '%'),
+);
+$('toggles').append(toggle('Reading line', 'readingLine'), toggle('Mirror text', 'mirror'));
+
+// ---- state from the room ----
+const text = $('text');
+let seeded = false;
+const onState = (v) => {
+  if (!seeded) {
+    seeded = true;
+    if (!v || !Object.keys(v).length) { Object.assign(s, saved); sync.set('state', { ...s, playing: false }); s.playing = false; }   // new room: start from what this device remembers
+    else Object.assign(s, v);
+    text.value = s.text || '';
+  } else if (v) {
+    Object.assign(s, v);
+    if (document.activeElement !== text && text.value !== s.text) text.value = s.text || '';
+  }
+  paint();
+};
+let td; text.oninput = () => { clearTimeout(td); td = setTimeout(() => push({ text: text.value }), 300); };
+
+// ---- status from the iPad ----
+let st = { pos: 0, auto: 0, jogMax: 0.2, line: 0.02, eta: null, phase: 'idle', count: null };
+let posEst = 0, statusCount = 0, lastSeen = -1e9, online = true;
+const onStatus = (v) => {
+  if (!v) return;
+  st = { ...st, ...v };
+  statusCount++;
+  if (statusCount > 1) lastSeen = performance.now();     // the first value may be old data left in the room
+  posEst = statusCount <= 2 ? st.pos : posEst + (st.pos - posEst) * 0.35;
+  paintStatus();
+};
+const seen =() => performance.now() - lastSeen < 4000;
+const fmtTime = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+const COUNT_WORDS = { '3': 'Starting in 3…', '2': 'Starting in 2…', '64': 'Starting in 1…', GO: 'Go' };
+
+function paintStatus() {
+  const here = seen(), live = here && st.phase === 'scroll';
+  $('chip').innerHTML = !online ? `<span class="p-chip p-chip--off">${ICON.off}Offline, retrying</span>`
+    : here ? `<span class="p-chip">${ICON.check}Connected</span>`
+    : `<span class="p-chip p-chip--wait">${ICON.wait}Waiting for iPad</span>`;
+  $('state').textContent = !here ? 'Waiting for iPad' : st.phase === 'idle' ? 'Tap the iPad screen' : st.phase === 'count' ? (COUNT_WORDS[st.count] || 'Starting…') : live ? 'Playing' : 'Paused';
+  $('play').classList.toggle('is-live', live);
+  $('pad').classList.toggle('is-live', live);
+  $('seek').classList.toggle('is-live', live);
+  $('eta').textContent = here && st.eta != null ? fmtTime(st.eta) + ' left' : '—';
+}
+setInterval(paintStatus, 1000);
 
 function paint() {
-  $('play').textContent = s.playing ? '❚❚ Pause' : '▶ Play';
-  $('play').style.background = s.playing ? '#a63' : '#2a6';
-  $('mirror').textContent = 'Mirror: ' + (s.mirror ? 'on' : 'off');
-  $('speed').value = s.speed; $('speedV').textContent = s.speed;
-  $('font').value = s.fontSize; $('fontV').textContent = s.fontSize;
-  $('margin').value = s.margin; $('marginV').textContent = s.margin;
+  paints.forEach((p) => p());
+  $('play').innerHTML = s.playing ? ICON.pause + 'Pause' : ICON.play + 'Play';
+  setPadText(); layoutPad();
 }
 
-// Load existing room state once (so a refreshed remote doesn't wipe the script)
-let loaded = false;
-sync.on('state', (v) => {
-  if (v) Object.assign(s, v);
-  if (!loaded) { loaded = true; $('text').value = s.text || ''; }
-  paint();
+// ---- Script pad: a view of the iPad and the joystick ----
+const pad = $('pad'), txt = $('padTxt'), mk = $('mk'), hd = $('hd'), ci = $('ci'), au = $('au'), ad = $('ad');
+let padM = 0, padH = 1, shownText = null;
+function setPadText() {
+  if (shownText === s.text) return; shownText = s.text;
+  txt.textContent = '';
+  (s.text || 'Your script appears here.').split('\n').forEach((l) => { const p = document.createElement('p'); p.textContent = l || ' '; txt.append(p); });
+  padH = txt.offsetHeight || 1;
+}
+function layoutPad() { padM = s.startLine / 100 * pad.clientHeight; mk.style.top = (padM - 1.5) + 'px'; hd.style.top = padM + 'px'; padH = txt.offsetHeight || 1; }
+const cssMs = (name, d) => { const n = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)); return isNaN(n) ? d : n; };
+const clamp01 = (v) => Math.min(1, Math.max(0, v));
+
+let jogR = 0, down = null, armTimer = 0, armed = false, moved = false, jogTimer = 0;
+const sendJog = () => sync.set('jog', { v: +jogR.toFixed(2), t: Date.now() });
+const step = (dir) => { posEst = clamp01(posEst + dir * st.line); sync.set('cmd', { type: 'step', dir, t: Date.now() }); };
+function arm() { if (!down || armed) return; armed = true; ci.classList.add('is-armed'); jogTimer = setInterval(sendJog, 100); sendJog(); }
+pad.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('.p-pad__h')) return;
+  pad.setPointerCapture(e.pointerId);
+  const r = pad.getBoundingClientRect();
+  down = { x: e.clientX - r.left, y: e.clientY - r.top, cy: e.clientY, t: performance.now() };
+  armed = false; moved = false; jogR = 0;
+  ci.style.left = down.x + 'px'; ci.style.top = down.y + 'px';
+  ci.classList.remove('is-armed', 'is-push'); ci.style.setProperty('--r', 0);
+  pad.classList.add('is-touch');
+  armTimer = setTimeout(arm, cssMs('--dur-arm', 200));
 });
-sync.on('status', (v) => { if (v) $('bar').style.width = (v.pos * 100) + '%'; });
+pad.addEventListener('pointermove', (e) => {
+  if (!down) return;
+  const dy = e.clientY - down.cy;
+  if (Math.abs(dy) > 10) { moved = true; arm(); }
+  if (armed) {
+    const r = Math.max(-1, Math.min(1, -dy / 90));          // push up = forward
+    jogR = Math.abs(r) < 0.05 ? 0 : r;
+    ci.style.setProperty('--r', Math.abs(jogR)); ci.classList.toggle('is-push', jogR !== 0);
+    au.classList.toggle('on', jogR > 0); ad.classList.toggle('on', jogR < 0);
+  }
+});
+function endTouch() {
+  if (!down) return;
+  clearTimeout(armTimer); clearInterval(jogTimer);
+  const wasTap = !armed && !moved && performance.now() - down.t < cssMs('--dur-arm', 200);
+  if (wasTap) step(down.y < pad.clientHeight / 2 ? -1 : 1);
+  if (armed) { jogR = 0; sendJog(); setTimeout(sendJog, 150); }   // let go: stop (sent twice in case one is lost)
+  down = null; armed = false; jogR = 0;
+  ci.classList.remove('is-armed', 'is-push'); au.classList.remove('on'); ad.classList.remove('on'); pad.classList.remove('is-touch');
+}
+pad.addEventListener('pointerup', endTouch); pad.addEventListener('pointercancel', endTouch);
+pad.addEventListener('keydown', (e) => { if (e.target !== pad) return; if (e.key === 'ArrowUp') step(-1); else if (e.key === 'ArrowDown') step(1); else return; e.preventDefault(); });
 
-let t;
-$('text').oninput = () => { clearTimeout(t); t = setTimeout(() => push({ text: $('text').value }), 300); };
-$('play').onclick = () => push({ playing: !s.playing });
-$('mirror').onclick = () => push({ mirror: !s.mirror });
-$('top').onclick = () => sync.set('cmd', { type: 'top', t: Date.now() });
-$('speed').oninput = (e) => push({ speed: +e.target.value });
-$('font').oninput = (e) => push({ fontSize: +e.target.value });
-$('margin').oninput = (e) => push({ margin: +e.target.value });
-$('progress').onclick = (e) => {
-  const r = e.currentTarget.getBoundingClientRect();
-  sync.set('cmd', { type: 'seek', pos: (e.clientX - r.left) / r.width, t: Date.now() });
+// Start line handle: paused only (hidden while scrolling).
+let hdrag = false, lastHd = 0;
+hd.addEventListener('pointerdown', (e) => { if (pad.classList.contains('is-live')) return; hd.setPointerCapture(e.pointerId); hdrag = true; hd.classList.add('is-drag'); });
+hd.addEventListener('pointermove', (e) => {
+  if (!hdrag) return;
+  const r = pad.getBoundingClientRect();
+  s.startLine = Math.round(Math.max(10, Math.min(60, (e.clientY - r.top) / r.height * 100)));
+  layoutPad();
+  if (performance.now() - lastHd > 60) { lastHd = performance.now(); sync.set('state', { startLine: s.startLine }); }
+});
+function hdEnd() { if (!hdrag) return; hdrag = false; hd.classList.remove('is-drag'); push({ startLine: s.startLine }); }
+hd.addEventListener('pointerup', hdEnd); hd.addEventListener('pointercancel', hdEnd);
+hd.addEventListener('keydown', (e) => {
+  if (pad.classList.contains('is-live')) return;
+  if (e.key === 'ArrowUp') push({ startLine: Math.max(10, s.startLine - 2) }); else if (e.key === 'ArrowDown') push({ startLine: Math.min(60, s.startLine + 2) }); else return;
+  e.preventDefault();
+});
+
+// ---- position bar, play, back to top ----
+$('seek').onclick = (e) => {
+  const r = $('seek').querySelector('.p-seek__track').getBoundingClientRect();
+  posEst = clamp01((e.clientX - r.left) / r.width);
+  sync.set('cmd', { type: 'seek', pos: posEst, t: Date.now() });
 };
+const togglePlay = () => { navigator.vibrate?.(15); push({ playing: !s.playing }); };
+const toTop = () => { posEst = 0; sync.set('cmd', { type: 'top', t: Date.now() }); };
+$('play').onclick = togglePlay;
+$('top').onclick = toTop;
 
-// Jog pad: distance from where you touched = scroll velocity. Resent every 150ms while held.
-const jog = $('jog'); let y0 = null, v = 0, timer;
-const sendJog = () => sync.set('jog', { v, t: Date.now() });
-jog.onpointerdown = (e) => { y0 = e.clientY; jog.setPointerCapture(e.pointerId); timer = setInterval(sendJog, 150); };
-jog.onpointermove = (e) => { if (y0 !== null) v = Math.round((y0 - e.clientY) * 6); };
-const end = () => { y0 = null; v = 0; clearInterval(timer); sendJog(); };
-jog.onpointerup = end; jog.onpointercancel = end;
+// ---- animation: keep the pad and bar moving between the iPad's 4-per-second reports ----
+let lastF = performance.now(), pctShown = '';
+function frame(now) {
+  const dt = Math.min(0.1, (now - lastF) / 1000); lastF = now;
+  const v = seen() ? st.auto + jogR * st.jogMax : jogR * st.jogMax;
+  if (v) posEst = clamp01(posEst + v * dt);
+  txt.style.transform = `translateY(${padM + 4 - posEst * padH}px)`;
+  $('fill').style.width = (posEst * 100).toFixed(1) + '%';
+  const p = Math.round(posEst * 100) + '%';
+  if (p !== pctShown) { pctShown = p; $('pct').textContent = p; pad.setAttribute('aria-valuenow', String(Math.round(posEst * 100))); }
+  requestAnimationFrame(frame);
+}
+
+// ---- Look sheet (phone) ----
+const look = $('look'), dim = $('dim'), isLaptop = matchMedia('(min-width: 900px)');
+function openLook() { look.classList.add('open'); dim.classList.add('open'); history.pushState({ sheet: 1 }, ''); $('closeLook').focus({ preventScroll: true }); }
+function closeLook(fromPop) { if (!look.classList.contains('open')) return; look.classList.remove('open'); dim.classList.remove('open'); if (!fromPop && history.state?.sheet) history.back(); $('lookBtn').focus({ preventScroll: true }); }
+$('lookBtn').onclick = openLook; $('closeLook').onclick = () => closeLook(); dim.onclick = () => closeLook();
+addEventListener('popstate', () => closeLook(true));
+let gy = null, gdy = 0;
+$('grip').addEventListener('pointerdown', (e) => { $('grip').setPointerCapture(e.pointerId); gy = e.clientY; gdy = 0; look.style.transition = 'none'; });
+$('grip').addEventListener('pointermove', (e) => { if (gy === null) return; gdy = Math.max(0, e.clientY - gy); look.style.transform = `translateY(${gdy}px)`; });
+const gripEnd = () => { if (gy === null) return; gy = null; look.style.transition = ''; look.style.transform = ''; if (gdy > 80) closeLook(); gdy = 0; };
+$('grip').addEventListener('pointerup', gripEnd); $('grip').addEventListener('pointercancel', gripEnd);
+
+// ---- laptop keys ----
+const typing = (el) => el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT');
+addEventListener('keydown', (e) => {
+  if (typing(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'Escape') { closeLook(); return; }
+  if (e.target.closest?.('.p-pad, .p-pad__h')) { if (e.code === 'Space') { e.preventDefault(); togglePlay(); } return; }
+  if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); push({ speed: Math.min(10, +(s.speed + 0.5).toFixed(1)) }); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); push({ speed: Math.max(0.5, +(s.speed - 0.5).toFixed(1)) }); }
+  else if (e.key === '0') toTop();
+});
+addEventListener('keyup', (e) => { if (e.code === 'Space' && !typing(e.target)) e.preventDefault(); });   // stop a focused button firing a second click
+
+addEventListener('resize', layoutPad);
+document.fonts.ready.then(() => { layoutPad(); });
+// Subscribe last: in local test mode the callbacks run at once and need everything above to exist.
+sync.onConnection((ok) => { online = ok; paintStatus(); });
+sync.on('state', onState);
+sync.on('status', onStatus);
+paint(); paintStatus();
+requestAnimationFrame(frame);
 </script>
 </body>
 </html>

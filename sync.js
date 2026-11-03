@@ -1,4 +1,6 @@
 // Sync layer: Firebase Realtime DB when configured, otherwise local test mode (BroadcastChannel).
+// on(path, cb)      -> value now, then on every change (state, status)
+// onEvent(path, cb) -> only changes from now on, never the stored old value (cmd, jog)
 import { FIREBASE_CONFIG } from './config.js';
 
 const FB = 'https://www.gstatic.com/firebasejs/10.12.2/';
@@ -12,6 +14,7 @@ export async function connect(room) {
     return {
       mode: 'online',
       on: (path, cb) => onValue(r(path), (s) => cb(s.val())),
+      onEvent: (path, cb) => { let first = true; onValue(r(path), (s) => { if (first) { first = false; return; } cb(s.val()); }); },
       set: (path, obj) => update(r(path), obj),
       onConnection: (cb) => onValue(ref(db, '.info/connected'), (s) => cb(!!s.val())),
     };
@@ -21,16 +24,22 @@ export async function connect(room) {
   const key = 'prompter-' + room;
   const bc = new BroadcastChannel(key);
   const load = () => JSON.parse(localStorage.getItem(key) || '{}');
-  const listeners = {};
-  bc.onmessage = (e) => (listeners[e.data] || []).forEach((cb) => cb(load()[e.data] ?? null));
+  const values = {}, events = {};
+  bc.onmessage = (e) => {
+    const v = load()[e.data] ?? null;
+    (values[e.data] || []).forEach((cb) => cb(v));
+    (events[e.data] || []).forEach((cb) => cb(v));
+  };
   return {
     mode: 'local',
-    on(path, cb) { (listeners[path] ||= []).push(cb); cb(load()[path] ?? null); },
+    on(path, cb) { (values[path] ||= []).push(cb); cb(load()[path] ?? null); },
+    onEvent(path, cb) { (events[path] ||= []).push(cb); },
     set(path, obj) {
       const s = load(); s[path] = { ...(s[path] || {}), ...obj };
       localStorage.setItem(key, JSON.stringify(s));
       bc.postMessage(path);
-      (listeners[path] || []).forEach((cb) => cb(s[path]));
+      (values[path] || []).forEach((cb) => cb(s[path]));
+      (events[path] || []).forEach((cb) => cb(s[path]));
     },
     onConnection: (cb) => cb(true),
   };

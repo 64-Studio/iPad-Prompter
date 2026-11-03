@@ -4,80 +4,173 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Prompter — screen</title>
-<link rel="preconnect" href="https://fonts.gstatic.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Georgian:wght@400;600&display=swap" rel="stylesheet">
+<meta name="theme-color" content="#000000">
+<title>Prompter — iPad</title>
+<link rel="stylesheet" href="design/tokens.css">
+<link rel="stylesheet" href="design/components.css">
 <style>
-  html, body { margin:0; height:100%; background:#000; color:#fff; overflow:hidden; }
-  #stage { position:fixed; inset:0; }
-  #stage.mirror { transform:scaleX(-1); }
-  #text { position:absolute; left:0; right:0; top:0; white-space:pre-wrap; overflow-wrap:break-word;
-          font-family:'Noto Sans Georgian', system-ui, sans-serif; line-height:1.4; will-change:transform; }
-  #line { position:fixed; left:0; right:0; top:33%; border-top:2px solid rgba(255,80,80,.6); pointer-events:none; }
-  #overlay { position:fixed; inset:0; background:#000; display:grid; place-items:center; text-align:center; font:20px system-ui; z-index:2; }
-  #overlay b { font-size:96px; letter-spacing:12px; display:block; }
-  #dot { position:fixed; right:10px; bottom:10px; width:10px; height:10px; border-radius:50%; background:#c33; z-index:3; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; background: var(--stage); color: var(--script); overflow: hidden; overscroll-behavior: none;
+               touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: none; }
+
+  /* Reading view: script on true black, nothing else except the reading marker. */
+  #screen { position: fixed; inset: 0; overflow: hidden; background: var(--stage); }
+  #screen.mirror { transform: scaleX(-1); }
+  #text { position: absolute; left: 0; right: 0; top: 0; box-sizing: border-box; white-space: pre-wrap; overflow-wrap: break-word;
+          font-family: var(--font-script); font-weight: 500; color: var(--script); will-change: transform; }
+  #marker { position: absolute; left: 0; right: 0; height: var(--marker); background: var(--script); pointer-events: none; }
+  #marker::before { content: ""; position: absolute; left: 0; top: -9px; border-left: 16px solid var(--script); border-top: 10px solid transparent; border-bottom: 10px solid transparent; }
+  #marker.is-live { background: var(--live); }
+  #marker.is-live::before { border-left-color: var(--live); }
+
+  /* Countdown 3, 2, 64, GO: fills the screen, covers the marker. */
+  #count.p-count { position: absolute; inset: 0; border-radius: 0; min-height: 0; --dh: min(46vh, 34vw); }
+  #count .p-count__d { height: var(--dh); width: calc(var(--dh) * 72 / 132); }
+  #count .p-count__d.is-off { width: 0; }
+
+  /* Waiting screen: room code. */
+  #idle { position: fixed; inset: 0; z-index: 5; background: var(--stage); display: flex; flex-direction: column; align-items: center; justify-content: center;
+          gap: var(--space-5); padding: var(--space-8); text-align: center; cursor: auto; color: var(--text); font-family: var(--font-ui); }
+  #idle .p-room__code { font-size: 96px; line-height: 104px; }
+  #idle .p-cap { font-size: 16px; line-height: 24px; }
+  #idle .start { font: 500 24px/32px var(--font-ui); }
+  .mark { display: block; }
 </style>
 </head>
 <body>
-<div id="stage"><div id="text"></div></div>
-<div id="line"></div>
-<div id="dot"></div>
-<div id="overlay"><div>Room code<b id="code"></b><span id="mode"></span><br><br>Tap anywhere to start</div></div>
+<div id="screen">
+  <div id="text"></div>
+  <div id="marker"></div>
+  <div id="count" class="p-count" role="img" aria-label="Countdown" hidden>
+    <svg class="p-count__d" id="dL" viewBox="0 0 72 132"></svg>
+    <svg class="p-count__d" id="dR" viewBox="0 0 72 132"></svg>
+  </div>
+</div>
+
+<div id="idle">
+  <div id="markSlot"></div>
+  <div class="p-room"><span class="p-cap">Room code</span><span class="p-room__code" id="code"></span></div>
+  <span class="p-cap">On your phone or laptop, open this site and join with the code.</span>
+  <span class="start">Tap this screen once to start</span>
+  <span id="chip"></span>
+</div>
 
 <script type="module">
 import { connect, getRoom } from './sync.js';
+import { digitInner, setDigit, markSvg, ICON } from './common.js';
 
-const room = getRoom();
 const $ = (id) => document.getElementById(id);
+const room = getRoom();
+if (!room) location.replace('./');
 $('code').textContent = room;
+$('markSlot').innerHTML = markSvg(40);
+$('dL').innerHTML = digitInner(); $('dR').innerHTML = digitInner();
 
-const s = { text: 'Paste your script on the remote.', fontSize: 64, speed: 3, playing: false, mirror: false, margin: 8 };
-let pos = 0, jogV = 0, lastJog = 0, last = performance.now(), lastReport = 0;
+const PLACEHOLDER = 'Paste your script on the remote.';
+const s = { text: '', fontSize: 56, lineSpacing: 1.4, margin: 8, speed: 3, playing: false, mirror: false, readingLine: true, startLine: 30 };
+let phase = 'idle';            // idle (waiting screen) | ready (reading, paused) | count | scroll
+let pos = 0;                   // px scrolled; 0 = first line at the marker
+let jogV = 0, lastJog = 0, countLabel = null, timers = [];
+let pt = 0, pb = 0;            // text padding top/bottom in px, set by layout
 
 const sync = await connect(room);
-$('mode').textContent = sync.mode === 'local' ? '(local test mode)' : '';
-sync.onConnection((ok) => $('dot').style.background = ok ? '#2a2' : '#c33');
+let online = false;
+const paintChip = () => {
+  $('chip').innerHTML = online
+    ? `<span class="p-chip">${ICON.check}Online${sync.mode === 'local' ? ' (test mode)' : ''}</span>`
+    : `<span class="p-chip p-chip--off">${ICON.off}Offline, retrying</span>`;
+};
+sync.onConnection((ok) => { online = ok; paintChip(); });
+paintChip();
 
-const textEl = $('text');
-function render() {
-  textEl.textContent = s.text;
+const textEl = $('text'), markerEl = $('marker'), countEl = $('count');
+const lineH = () => s.fontSize * s.lineSpacing;
+const contentH = () => Math.max(1, textEl.scrollHeight - pt - pb);
+const clamp = (v) => Math.min(contentH(), Math.max(0, v));
+
+// Rule 6: a change to size, margins or spacing keeps the line the reader is on in place.
+function layout() {
+  const frac = pos / contentH();
+  textEl.textContent = s.text || PLACEHOLDER;
+  pt = Math.round(s.startLine / 100 * innerHeight) + 4;
+  pb = innerHeight;
   textEl.style.fontSize = s.fontSize + 'px';
-  textEl.style.padding = `${innerHeight * 0.33}px ${s.margin}vw ${innerHeight}px`;
-  $('stage').classList.toggle('mirror', !!s.mirror);
+  textEl.style.lineHeight = String(s.lineSpacing);
+  textEl.style.padding = `${pt}px ${s.margin}vw ${pb}px`;
+  markerEl.style.top = (s.startLine / 100 * innerHeight - 1.5) + 'px';
+  markerEl.hidden = !s.readingLine;
+  $('screen').classList.toggle('mirror', !!s.mirror);
+  pos = clamp(frac * contentH());
 }
-const maxPos = () => Math.max(0, textEl.scrollHeight - innerHeight);
 
-sync.on('state', (v) => { if (v) { Object.assign(s, v); render(); } });
-sync.on('jog', (v) => { if (v) { jogV = v.v || 0; lastJog = performance.now(); } });
-sync.on('cmd', (v) => {
-  if (!v) return;
+function cssMs(name, d) { const n = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)); return isNaN(n) ? d : n; }
+function startCount() {
+  phase = 'count'; countEl.hidden = false; countEl.classList.remove('is-go');
+  const step = cssMs('--dur-count-step', 1000), morph = cssMs('--dur-morph', 800);
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const goAt = reduce ? 2 * step : 2.8 * step;
+  const seq = reduce
+    ? [[0, '-', '3', '3'], [step, '-', '2', '2'], [goAt, 'G', 'O', 'GO']]
+    : [[0, '-', '3', '3'], [step, '-', '2', '2'], [2 * step, '6', '4', '64'], [goAt, 'G', 'O', 'GO']];
+  seq.forEach(([t, l, r, label]) => timers.push(setTimeout(() => {
+    setDigit($('dL'), l); setDigit($('dR'), r); countLabel = label;
+    if (label === 'GO') countEl.classList.add('is-go');
+  }, t)));
+  timers.push(setTimeout(() => { phase = 'scroll'; }, goAt + morph));          // scrolling starts when GO is fully lit
+  timers.push(setTimeout(() => { countEl.hidden = true; }, goAt + morph + 700)); // then the digits clear
+}
+function cancelCount() { timers.forEach(clearTimeout); timers = []; countEl.hidden = true; if (phase === 'count') phase = 'ready'; }
+
+// Play starts a countdown only from the top; later resumes just continue.
+function reconcile() {
+  if (phase === 'idle') return;
+  if (s.playing) { if (phase === 'ready') { if (pos < lineH() * 0.5) startCount(); else phase = 'scroll'; } }
+  else { if (phase === 'count') cancelCount(); if (phase === 'scroll') phase = 'ready'; }
+}
+
+sync.on('state', (v) => { if (!v) return; Object.assign(s, v); layout(); reconcile(); });
+sync.onEvent('jog', (v) => { if (v) { jogV = Math.max(-1, Math.min(1, +v.v || 0)); lastJog = performance.now(); } });
+sync.onEvent('cmd', (v) => {
+  if (!v || phase === 'idle' || phase === 'count') return;
   if (v.type === 'top') pos = 0;
-  if (v.type === 'seek') pos = v.pos * maxPos();
+  if (v.type === 'seek') pos = clamp(v.pos * contentH());
+  if (v.type === 'step') pos = clamp(pos + (v.dir < 0 ? -1 : 1) * lineH());
 });
 
-// Scrolling runs locally on the iPad; the remote only sends commands.
+// Scrolling runs here on the iPad; the remote only sends commands.
+let last = performance.now(), lastReport = 0;
 function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
-  if (now - lastJog > 400) jogV = 0;                       // jog expires if the remote goes quiet
-  const auto = s.playing ? s.speed * s.fontSize * 0.25 : 0; // px/sec, scales with font size
-  pos = Math.min(maxPos(), Math.max(0, pos + (auto + jogV) * dt));
+  if (now - lastJog > 400) jogV = 0;                                   // joystick expires if the remote goes quiet
+  const auto = phase === 'scroll' ? s.speed * s.fontSize * 0.25 : 0;  // px/sec, scales with font size
+  const jog = (phase === 'ready' || phase === 'scroll') ? jogV * 5 * lineH() : 0;
+  if (auto || jog) pos = clamp(pos + (auto + jog) * dt);
+  if (phase === 'scroll' && pos >= contentH() - 0.5) {                 // end of script: stop and tell the remote
+    s.playing = false; phase = 'ready'; sync.set('state', { playing: false });
+  }
   textEl.style.transform = `translate3d(0, ${-pos}px, 0)`;
-  if (now - lastReport > 250) {                            // report position ~4x/sec
+  markerEl.classList.toggle('is-live', phase === 'scroll');
+  if (now - lastReport > 250) {                                        // report ~4x/sec; also tells the remote we are here
     lastReport = now;
-    const max = maxPos();
-    sync.set('status', { pos: max ? +(pos / max).toFixed(4) : 0, t: Date.now() });
+    const h = contentH(), autoPx = s.speed * s.fontSize * 0.25;
+    sync.set('status', {
+      pos: +(pos / h).toFixed(4), auto: auto ? +(auto / h).toFixed(5) : 0, jogMax: +(5 * lineH() / h).toFixed(5), line: +(lineH() / h).toFixed(5),
+      eta: auto ? Math.round((h - pos) / autoPx) : null, phase, count: phase === 'count' ? countLabel : null, t: Date.now(),
+    });
   }
   requestAnimationFrame(loop);
 }
 
-$('overlay').onclick = async () => {
-  $('overlay').style.display = 'none';
+$('idle').onclick = async () => {
+  $('idle').hidden = true; phase = 'ready';
   try { await navigator.wakeLock?.request('screen'); } catch {}
   try { await document.documentElement.requestFullscreen?.(); } catch {}
+  reconcile();
 };
-addEventListener('resize', render);
-render();
+document.addEventListener('visibilitychange', async () => { if (!document.hidden && phase !== 'idle') { try { await navigator.wakeLock?.request('screen'); } catch {} } });
+addEventListener('resize', layout);
+document.fonts.ready.then(layout);
+layout();
 requestAnimationFrame(loop);
 </script>
 </body>
