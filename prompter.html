@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Prompter">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <title>Prompter — iPad</title>
 <link rel="stylesheet" href="design/tokens.css">
 <link rel="stylesheet" href="design/components.css">
@@ -80,7 +84,8 @@ const paintChip = () => {
     ? `<span class="p-chip">${ICON.check}Online${sync.mode === 'local' ? ' (test mode)' : ''}</span>`
     : `<span class="p-chip p-chip--off">${ICON.off}Offline, retrying</span>`;
 };
-sync.onConnection((ok) => { online = ok; paintChip(); });
+let reconnectedAt = 0;   // commands replayed by Firebase right after a reconnect are old: ignore them for a moment
+sync.onConnection((ok) => { if (ok && !online) reconnectedAt = performance.now(); online = ok; paintChip(); });
 paintChip();
 
 const textEl = $('text'), markerEl = $('marker'), countEl = $('count');
@@ -129,9 +134,10 @@ function reconcile() {
 }
 
 sync.on('state', (v) => { if (!v) return; Object.assign(s, v); layout(); reconcile(); });
-sync.onEvent('jog', (v) => { if (v) { jogV = Math.max(-1, Math.min(1, +v.v || 0)); lastJog = performance.now(); } });
+const stale = () => performance.now() - reconnectedAt < 1200;
+sync.onEvent('jog', (v) => { if (v && !stale()) { jogV = Math.max(-1, Math.min(1, +v.v || 0)); lastJog = performance.now(); } });
 sync.onEvent('cmd', (v) => {
-  if (!v || phase === 'idle' || phase === 'count') return;
+  if (!v || stale() || phase === 'idle' || phase === 'count') return;
   if (v.type === 'top') pos = 0;
   if (v.type === 'seek') pos = clamp(v.pos * contentH());
   if (v.type === 'step') pos = clamp(pos + (v.dir < 0 ? -1 : 1) * lineH());
@@ -150,7 +156,7 @@ function loop(now) {
   }
   textEl.style.transform = `translate3d(0, ${-pos}px, 0)`;
   markerEl.classList.toggle('is-live', phase === 'scroll');
-  if (now - lastReport > 250) {                                        // report ~4x/sec; also tells the remote we are here
+  if (online && now - lastReport > 250) {                                        // report ~4x/sec; also tells the remote we are here
     lastReport = now;
     const h = contentH(), autoPx = s.speed * s.fontSize * 0.25;
     sync.set('status', {
@@ -163,11 +169,17 @@ function loop(now) {
 
 $('idle').onclick = async () => {
   $('idle').hidden = true; phase = 'ready';
-  try { await navigator.wakeLock?.request('screen'); } catch {}
+  keepAwake();
   try { await document.documentElement.requestFullscreen?.(); } catch {}
   reconcile();
 };
-document.addEventListener('visibilitychange', async () => { if (!document.hidden && phase !== 'idle') { try { await navigator.wakeLock?.request('screen'); } catch {} } });
+// Keep the screen awake. iOS can drop the lock (tab hidden, low power): ask again when it is released.
+let lock = null;
+async function keepAwake() {
+  if (phase === 'idle' || document.hidden || (lock && !lock.released)) return;
+  try { lock = await navigator.wakeLock?.request('screen'); lock?.addEventListener('release', () => setTimeout(keepAwake, 300)); } catch {}
+}
+document.addEventListener('visibilitychange', keepAwake);
 addEventListener('resize', layout);
 document.fonts.ready.then(layout);
 layout();
