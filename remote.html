@@ -30,13 +30,17 @@
   .state { font: 500 28px/32px var(--font-ui); min-height: 32px; }
   .main .p-seek { min-width: 0; }
   .main .p-seek__hit { height: 44px; }
-  .padwrap { flex: 1 1 0; min-height: 150px; }          /* the Script pad is fitted into this, in the iPad's shape */
+  .padwrap { flex: 1 1 0; min-height: 150px; }          /* the Script pad is fitted into this, in the iPad's shape; JS caps its height at the pad's full-width height */
   .main .p-pad { margin: 0 auto; }
   .speed .p-step { min-width: 0; }
   .speed .p-step__row .p-step__val { text-align: center; }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
   .row .p-btn { width: 100%; padding: 0 var(--space-3); }
   .main .p-play { width: 100%; min-width: 0; }
+  @media (max-width: 899px) {   /* phone: smaller Play and tighter gaps so the first screen fits with the full-width pad; spare height is spread between the rows */
+    .main { justify-content: space-between; gap: 10px; padding-top: 12px; }
+    .main .p-play { height: 64px; }
+  }
 
   /* Look panel: bottom sheet on the phone, permanent right column on the laptop. */
   .look { position: fixed; left: 0; right: 0; bottom: 0; max-height: calc(100dvh - 24px); display: flex; flex-direction: column; z-index: 20;
@@ -61,11 +65,6 @@
     .look__top .group > .p-cap { display: none; }
     .look[data-view="pv"] #textBox, .look[data-view="tx"] #pvBox { display: none; }
     .look__top .ta { height: 150px; min-height: 0; max-height: none; resize: none; }
-    /* Compact Look so the whole sheet fits one upright phone screen: stepper label sits beside its buttons, tighter gaps. */
-    .look__body { gap: var(--space-3); padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom)); }
-    .look .p-step { flex-direction: row; align-items: center; gap: var(--space-3); }
-    .look .p-step__label { flex: none; width: 104px; }
-    .look .p-step__row { flex: 1; min-width: 0; }
   }
   .group > .p-cap { text-transform: none; }
   .ta { width: 100%; box-sizing: border-box; min-height: 140px; max-height: 34dvh; resize: vertical; padding: var(--space-3); user-select: text; -webkit-user-select: text;
@@ -292,6 +291,7 @@ const pvV = makeView($('pv'), $('pvs'), $('pvt'), 'Paste your script under Scrip
 let padM = 0, lastWH = '';
 function fitPad() {                                          // the pad window takes the iPad's shape, as big as fits
   const { W, H } = iPad(), cw = padWrap.clientWidth, ch = padWrap.clientHeight; if (!cw || !ch) return;
+  padWrap.style.maxHeight = Math.round(cw * H / W) + 'px';
   const k = Math.min(cw / W, ch / H), b = pad.offsetHeight - pad.clientHeight, w = Math.floor(W * k);
   pad.style.width = w + 'px'; pad.style.height = Math.round((w - b) * H / W + b) + 'px';
   $('hint').hidden = w < 300;
@@ -413,19 +413,14 @@ addEventListener('keydown', (e) => {
 });
 addEventListener('keyup', (e) => { if (e.code === 'Space' && !typing(e.target)) e.preventDefault(); });   // stop a focused button firing a second click
 
-// ---- Look: the preview takes the iPad's shape; the sheet still fits one screen ----
+// ---- Look: the preview takes the iPad's shape and the full width ----
 const isShort = matchMedia('(max-height: 560px)');
-function fitLook() {
+function fitLook() {                                         // preview: full width, the iPad's shape; the controls scroll under it
   if (isLaptop.matches) return;
-  const top = $('lookTop'), avail = top.clientWidth; if (!avail) return;
-  const { W, H } = iPad(), onPv = look.dataset.view === 'pv', cur = onPv ? $('pv') : $('text'), body = $('lookBody');
+  const avail = $('lookTop').clientWidth; if (!avail) return;
+  const { W, H } = iPad();
   let h = avail * H / W;
-  if (isShort.matches) h = Math.min(h, 160);                 // sideways: the sheet scrolls, keep it small
-  else {                                                     // upright: shrink the preview (never scroll) until the whole sheet fits
-    const max = parseFloat(getComputedStyle(look).maxHeight) || innerHeight * .92;
-    const rest = look.offsetHeight - body.clientHeight + body.scrollHeight - cur.offsetHeight;
-    h = Math.min(h, Math.max(110, max - rest));
-  }
+  if (isShort.matches) h = Math.min(h, 160);                 // phone sideways: keep it small, the sheet scrolls
   h = Math.round(h);
   $('pv').style.cssText = `width:${Math.min(avail, Math.round(h * W / H))}px;height:${h}px`;
   $('text').style.height = h + 'px';
