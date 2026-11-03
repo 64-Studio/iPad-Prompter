@@ -19,9 +19,10 @@
   button { font-family: inherit; }
   .app { position: relative; height: 100dvh; display: flex; }
 
-  /* Main control screen: phone, top to bottom. It never scrolls. */
+  /* Main control screen: phone, top to bottom. It fits one screen; on a very short screen it scrolls. */
   .main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--space-3); box-sizing: border-box; width: 100%; max-width: 640px; margin: 0 auto;
-          padding: var(--space-4); padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom)); }
+          padding: var(--space-4); padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+          overflow-y: auto; overscroll-behavior: contain; }   /* only scrolls when the screen is too short (phone held sideways) */
   .top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 40px; }
   .top .who { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
   .room { display: flex; flex-direction: column; }
@@ -29,7 +30,8 @@
   .state { font: 500 28px/32px var(--font-ui); min-height: 32px; }
   .main .p-seek { min-width: 0; }
   .main .p-seek__hit { height: 44px; }
-  .main .p-pad { flex: 1; height: auto; min-height: 180px; }
+  .padwrap { flex: 1 1 0; min-height: 150px; }          /* the Script pad is fitted into this, in the iPad's shape */
+  .main .p-pad { margin: 0 auto; }
   .speed .p-step { min-width: 0; }
   .speed .p-step__row .p-step__val { text-align: center; }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
@@ -37,7 +39,7 @@
   .main .p-play { width: 100%; min-width: 0; }
 
   /* Look panel: bottom sheet on the phone, permanent right column on the laptop. */
-  .look { position: fixed; left: 0; right: 0; bottom: 0; max-height: 88dvh; display: flex; flex-direction: column; z-index: 20;
+  .look { position: fixed; left: 0; right: 0; bottom: 0; max-height: calc(100dvh - 24px); display: flex; flex-direction: column; z-index: 20;
           background: var(--surface-1); border: 1.5px solid var(--line-strong); border-bottom: 0; border-radius: var(--radius-lg) var(--radius-lg) 0 0;
           transform: translateY(100%); visibility: hidden;
           transition: transform var(--dur-exit) var(--ease-out), visibility 0s linear var(--dur-exit); }
@@ -49,14 +51,21 @@
   .look__head { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-4) var(--space-2); }
   .look__head h2 { margin: 0; font: 600 24px/28px var(--font-ui); }
   .look__body { overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: var(--space-5);
-                padding: var(--space-2) var(--space-4) calc(var(--space-5) + env(safe-area-inset-bottom)); }
+                padding: 0 var(--space-4) calc(var(--space-5) + env(safe-area-inset-bottom)); }
   .group { display: flex; flex-direction: column; gap: var(--space-2); }
-  .look__top { display: flex; flex-direction: column; gap: var(--space-2); position: sticky; top: 0; z-index: 2; background: var(--surface-1); padding: var(--space-2) 0; margin-top: calc(-1 * var(--space-2)); }
+  /* The Preview / Script text box sits above the scrolling part, so nothing can show behind it. */
+  .look__top { flex: none; display: flex; flex-direction: column; gap: var(--space-2); margin: 0 var(--space-4) var(--space-4); }
+  #pv { align-self: center; }
   /* Phone: one box, switch between Preview and Script text. */
   @media (max-width: 899px) {
     .look__top .group > .p-cap { display: none; }
     .look[data-view="pv"] #textBox, .look[data-view="tx"] #pvBox { display: none; }
-    .look__top .ta { height: 150px; min-height: 150px; max-height: none; resize: none; }
+    .look__top .ta { height: 150px; min-height: 0; max-height: none; resize: none; }
+    /* Compact Look so the whole sheet fits one upright phone screen: stepper label sits beside its buttons, tighter gaps. */
+    .look__body { gap: var(--space-3); padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom)); }
+    .look .p-step { flex-direction: row; align-items: center; gap: var(--space-3); }
+    .look .p-step__label { flex: none; width: 104px; }
+    .look .p-step__row { flex: 1; min-width: 0; }
   }
   .group > .p-cap { text-transform: none; }
   .ta { width: 100%; box-sizing: border-box; min-height: 140px; max-height: 34dvh; resize: vertical; padding: var(--space-3); user-select: text; -webkit-user-select: text;
@@ -67,6 +76,12 @@
   .look .p-step, .look .p-toggle { min-width: 0; }
   .keys { color: var(--text-muted); display: none; }
 
+  /* Phone held sideways: the whole sheet scrolls as one (no fixed top box). */
+  @media (max-width: 899px) and (max-height: 560px) {
+    .padwrap { min-height: 210px; }                    /* a pad big enough to use with a thumb; the screen scrolls */
+    .look { overflow-y: auto; max-height: 100dvh; }
+    .look__body { overflow: visible; }
+  }
   @media (max-width: 899px) and (prefers-reduced-motion: reduce) {
     .look { transform: none; opacity: 0; transition: opacity 150ms ease-out, visibility 0s linear 150ms; }
     .look.open { opacity: 1; transition: opacity 150ms ease-out, visibility 0s; }
@@ -82,7 +97,7 @@
     .row { grid-template-columns: 1fr; }
     .speed { max-width: 420px; }
     .ta { min-height: 200px; }
-    .look__top { position: static; margin-top: 0; padding: 0; }
+    .look__top { margin-bottom: var(--space-5); }
     .p-switch, #pvBox { display: none; }   /* laptop: the Script pad and the iPad page already show it live */
     .keys { display: block; }
   }
@@ -103,12 +118,14 @@
       <span class="p-seek__read"><span id="pct">0%</span><span id="eta">—</span></span>
     </button>
 
+    <div class="padwrap" id="padWrap">
     <div class="p-pad" id="pad" tabindex="0" role="slider" aria-label="Script: tap for one line, hold and drag to scroll" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-      <div class="p-pad__t" id="padTxt"></div>
+      <div class="p-preview__screen" id="padScr"><div class="p-preview__text" id="padTxt"></div></div>
       <div class="p-pad__m" id="mk"></div>
       <button class="p-pad__h" id="hd" aria-label="Move start line"></button>
       <div class="p-pad__hint" id="hint"></div>
       <span class="p-pad__c" id="ci"><svg id="au" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg><svg id="ad" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+    </div>
     </div>
 
     <div class="speed" id="speedSlot"></div>
@@ -125,12 +142,12 @@
   <aside class="look" id="look" data-view="pv" aria-label="Look and script">
     <div class="grip" id="grip"><i></i></div>
     <div class="look__head"><h2>Look</h2><button class="p-btn" id="closeLook"></button></div>
-    <div class="look__body" id="lookBody">
-      <div class="look__top">
+    <div class="look__top" id="lookTop">
         <div class="p-switch" role="group" aria-label="Look view"><button class="p-switch__btn" id="swPv" aria-pressed="true">Preview</button><button class="p-switch__btn" id="swTx" aria-pressed="false">Script text</button></div>
         <div class="group" id="pvBox"><span class="p-cap">Preview, as on the iPad</span><div class="p-preview" id="pv" aria-hidden="true"><div class="p-preview__screen" id="pvs"><div class="p-preview__text" id="pvt"></div><div class="p-preview__marker" id="pvm"></div></div></div></div>
         <div class="group" id="textBox"><span class="p-cap">Script text</span><textarea class="ta" id="text" spellcheck="false" placeholder="Paste or type your script here (ქართული / English)"></textarea></div>
-      </div>
+    </div>
+    <div class="look__body" id="lookBody">
       <div class="group" id="steppers"></div>
       <div class="toggles" id="toggles"></div>
       <p class="p-cap keys">Keys: Space play or pause · ↑ ↓ speed · 0 back to top</p>
@@ -224,7 +241,7 @@ const onStatus = (v) => {
   statusCount++;
   if (statusCount > 1) lastSeen = performance.now();     // the first value may be old data left in the room
   posEst = statusCount <= 2 ? st.pos : posEst + (st.pos - posEst) * 0.35;
-  paintStatus(); paintPreview();
+  paintStatus(); refresh();
 };
 const seen =() => performance.now() - lastSeen < 4000;
 const fmtTime = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
@@ -239,6 +256,7 @@ function paintStatus() {
   $('play').classList.toggle('is-live', live);
   $('pad').classList.toggle('is-live', live);
   $('seek').classList.toggle('is-live', live);
+  $('pvm').classList.toggle('is-live', live);
   $('eta').textContent = here && st.eta != null ? fmtTime(st.eta) + ' left' : '—';
 }
 setInterval(paintStatus, 1000);
@@ -246,19 +264,46 @@ setInterval(paintStatus, 1000);
 function paint() {
   paints.forEach((p) => p());
   $('play').innerHTML = s.playing ? ICON.pause + 'Pause' : ICON.play + 'Play';
-  setPadText(); layoutPad();
+  refresh();
+}
+
+// ---- iPad screen: one drawing for the Script pad and the Look preview ----
+// It draws the iPad's screen at its real size (W x H) and scales it into a box, so the font, spacing, margins and line breaks are the iPad's.
+const iPad = () => ({ W: st.w || 1180, H: st.h || 820 });
+const makeView = (box, scr, txt, empty, mark) => ({ box, scr, txt, empty, mark, key: '', content: 1, shown: true });
+function layoutView(v) {
+  const bw = v.box.clientWidth;
+  if (!bw) { v.key = ''; return; }                           // hidden: it is drawn when it shows
+  const { W, H } = iPad(), startY = s.startLine / 100 * H, pt = Math.round(startY) + 4;
+  const key = [s.text, s.fontSize, s.lineSpacing, s.margin, s.startLine, s.readingLine, W, H, bw].join('|');
+  if (key === v.key) return; v.key = key;                   // redraw only when something changed
+  v.scr.style.cssText = `width:${W}px;height:${H}px;transform:scale(${bw / W})`;
+  v.txt.textContent = s.text || v.empty;
+  v.txt.style.fontSize = s.fontSize + 'px'; v.txt.style.lineHeight = String(s.lineSpacing);
+  v.txt.style.padding = `${pt}px ${s.margin / 100 * W}px ${H}px`;
+  v.content = Math.max(1, v.txt.scrollHeight - pt - H);
+  if (v.mark) { v.mark.style.top = (startY - 1.5) + 'px'; v.mark.hidden = !s.readingLine; }
 }
 
 // ---- Script pad: a view of the iPad and the joystick ----
-const pad = $('pad'), txt = $('padTxt'), mk = $('mk'), hd = $('hd'), ci = $('ci'), au = $('au'), ad = $('ad');
-let padM = 0, padH = 1, shownText = null;
-function setPadText() {
-  if (shownText === s.text) return; shownText = s.text;
-  txt.textContent = '';
-  (s.text || 'Your script appears here.').split('\n').forEach((l) => { const p = document.createElement('p'); p.textContent = l || ' '; txt.append(p); });
-  padH = txt.offsetHeight || 1;
+const pad = $('pad'), padWrap = $('padWrap'), mk = $('mk'), hd = $('hd'), ci = $('ci'), au = $('au'), ad = $('ad');
+const padV = makeView(pad, $('padScr'), $('padTxt'), 'Your script appears here.');
+const pvV = makeView($('pv'), $('pvs'), $('pvt'), 'Paste your script under Script text.', $('pvm'));
+let padM = 0, lastWH = '';
+function fitPad() {                                          // the pad window takes the iPad's shape, as big as fits
+  const { W, H } = iPad(), cw = padWrap.clientWidth, ch = padWrap.clientHeight; if (!cw || !ch) return;
+  const k = Math.min(cw / W, ch / H), b = pad.offsetHeight - pad.clientHeight, w = Math.floor(W * k);
+  pad.style.width = w + 'px'; pad.style.height = Math.round((w - b) * H / W + b) + 'px';
+  $('hint').hidden = w < 300;
+  refresh();
 }
-function layoutPad() { padM = s.startLine / 100 * pad.clientHeight; mk.style.top = (padM - 1.5) + 'px'; hd.style.top = padM + 'px'; padH = txt.offsetHeight || 1; }
+function layoutPad() { padM = s.startLine / 100 * pad.clientHeight; mk.style.top = (padM - 1.5) + 'px'; hd.style.top = Math.max(padM, 30) + 'px'; }
+function refresh() {
+  const { W, H } = iPad();
+  if (lastWH !== W + 'x' + H) { lastWH = W + 'x' + H; fitPad(); fitLook(); return; }   // iPad shape changed: re-fit
+  layoutView(padV); layoutView(pvV); layoutPad();
+}
+new ResizeObserver(fitPad).observe(padWrap);
 const cssMs = (name, d) => { const n = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)); return isNaN(n) ? d : n; };
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
@@ -335,7 +380,8 @@ function frame(now) {
   const dt = Math.min(0.1, (now - lastF) / 1000); lastF = now;
   const v = seen() ? st.auto + jogR * st.jogMax : jogR * st.jogMax;
   if (v) posEst = clamp01(posEst + v * dt);
-  txt.style.transform = `translateY(${padM + 4 - posEst * padH}px)`;
+  padV.txt.style.transform = `translateY(${-posEst * padV.content}px)`;
+  if (pvV.shown) pvV.txt.style.transform = `translateY(${-posEst * pvV.content}px)`;
   $('fill').style.width = (posEst * 100).toFixed(1) + '%';
   const p = Math.round(posEst * 100) + '%';
   if (p !== pctShown) { pctShown = p; $('pct').textContent = p; pad.setAttribute('aria-valuenow', String(Math.round(posEst * 100))); }
@@ -344,7 +390,7 @@ function frame(now) {
 
 // ---- Look sheet (phone) ----
 const look = $('look'), dim = $('dim'), isLaptop = matchMedia('(min-width: 900px)');
-function openLook() { look.classList.add('open'); dim.classList.add('open'); history.pushState({ sheet: 1 }, ''); $('closeLook').focus({ preventScroll: true }); }
+function openLook() { fitLook(); look.classList.add('open'); dim.classList.add('open'); history.pushState({ sheet: 1 }, ''); $('closeLook').focus({ preventScroll: true }); }
 function closeLook(fromPop) { if (!look.classList.contains('open')) return; look.classList.remove('open'); dim.classList.remove('open'); if (!fromPop && history.state?.sheet) history.back(); $('lookBtn').focus({ preventScroll: true }); }
 $('lookBtn').onclick = openLook; $('closeLook').onclick = () => closeLook(); dim.onclick = () => closeLook();
 addEventListener('popstate', () => closeLook(true));
@@ -367,34 +413,29 @@ addEventListener('keydown', (e) => {
 });
 addEventListener('keyup', (e) => { if (e.code === 'Space' && !typing(e.target)) e.preventDefault(); });   // stop a focused button firing a second click
 
-// ---- Look: Preview of the iPad screen (same size, spacing, margins, scaled down) + phone view switch ----
-const setView = (v) => { $('look').dataset.view = v; $('swPv').setAttribute('aria-pressed', String(v === 'pv')); $('swTx').setAttribute('aria-pressed', String(v === 'tx')); paintPreview(); };
+// ---- Look: the preview takes the iPad's shape; the sheet still fits one screen ----
+const isShort = matchMedia('(max-height: 560px)');
+function fitLook() {
+  if (isLaptop.matches) return;
+  const top = $('lookTop'), avail = top.clientWidth; if (!avail) return;
+  const { W, H } = iPad(), onPv = look.dataset.view === 'pv', cur = onPv ? $('pv') : $('text'), body = $('lookBody');
+  let h = avail * H / W;
+  if (isShort.matches) h = Math.min(h, 160);                 // sideways: the sheet scrolls, keep it small
+  else {                                                     // upright: shrink the preview (never scroll) until the whole sheet fits
+    const max = parseFloat(getComputedStyle(look).maxHeight) || innerHeight * .92;
+    const rest = look.offsetHeight - body.clientHeight + body.scrollHeight - cur.offsetHeight;
+    h = Math.min(h, Math.max(110, max - rest));
+  }
+  h = Math.round(h);
+  $('pv').style.cssText = `width:${Math.min(avail, Math.round(h * W / H))}px;height:${h}px`;
+  $('text').style.height = h + 'px';
+}
+const setView = (v) => { look.dataset.view = v; $('swPv').setAttribute('aria-pressed', String(v === 'pv')); $('swTx').setAttribute('aria-pressed', String(v === 'tx')); fitLook(); refresh(); };
 $('swPv').onclick = () => setView('pv');
 $('swTx').onclick = () => setView('tx');
-const PV_TOP = 30;                           // px from the top of the preview to the reading line
-let pvKey = '', pvContent = 1;
-function paintPreview() {
-  const box = $('pv').clientWidth; if (!box) return;           // hidden (Script text view)
-  const W = st.w || 1180, H = st.h || 820, k = box / W, startY = s.startLine / 100 * H, pt = Math.round(startY) + 4;
-  const key = [s.text, s.fontSize, s.lineSpacing, s.margin, s.startLine, s.readingLine, W, H, box].join('|');
-  if (key !== pvKey) {                                         // restyle only when something changed
-    pvKey = key;
-    $('pvs').style.cssText = `width:${W}px;height:${H}px;transform:translateY(${PV_TOP - startY * k}px) scale(${k})`;
-    const t = $('pvt');
-    t.textContent = s.text || 'Paste your script under Script text.';
-    t.style.fontSize = s.fontSize + 'px'; t.style.lineHeight = String(s.lineSpacing);
-    t.style.padding = `${pt}px ${s.margin / 100 * W}px ${H}px`;
-    pvContent = Math.max(1, t.scrollHeight - pt - H);
-    $('pvm').style.top = (startY - 1.5) + 'px'; $('pvm').hidden = !s.readingLine;
-  }
-  $('pvt').style.transform = `translateY(${-(st.pos || 0) * pvContent}px)`;   // follow the iPad's position
-  $('pvm').classList.toggle('is-live', st.phase === 'scroll');
-}
-paints.push(paintPreview);
-new ResizeObserver(() => paintPreview()).observe($('pv'));
-
-addEventListener('resize', layoutPad);
-document.fonts.ready.then(() => { layoutPad(); pvKey = ''; paintPreview(); });
+new ResizeObserver(() => { pvV.shown = $('pv').clientWidth > 0; refresh(); }).observe($('pv'));
+addEventListener('resize', () => { fitPad(); fitLook(); });
+document.fonts.ready.then(() => { padV.key = pvV.key = ''; fitPad(); fitLook(); });
 // Subscribe last: in local test mode the callbacks run at once and need everything above to exist.
 sync.onConnection((ok) => { online = ok; paintStatus(); });
 sync.on('state', onState);
