@@ -167,7 +167,8 @@ $('top').innerHTML = ICON.top + 'Back to top';
 $('lookBtn').innerHTML = ICON.look + 'Look';
 $('closeLook').innerHTML = ICON.close + 'Close';
 $('hd').innerHTML = ICON.grip + 'Start line';
-$('hint').innerHTML = ICON.updown + 'Tap one line · hold and drag for speed';
+const HINT_PAUSED = 'Tap one line · drag to scroll', HINT_PLAY = 'Hold and drag for speed';
+const setHint = () => { const txt = s.playing ? HINT_PLAY : HINT_PAUSED; if ($('hint').dataset.m === txt) return; $('hint').dataset.m = txt; $('hint').innerHTML = ICON.updown + txt; $('pad').setAttribute('aria-label', s.playing ? 'Script: tap for one line, hold and drag for speed' : 'Script: tap for one line, drag to scroll'); };
 
 // ---- settings: defaults, remembered on this device, seeded into a new room ----
 const DEF = { text: '', fontSize: 56, lineSpacing: 1.4, margin: 8, speed: 3, playing: false, mirror: false, readingLine: true, startLine: 30 };
@@ -233,13 +234,14 @@ let td; text.oninput = () => { clearTimeout(td); td = setTimeout(() => push({ te
 
 // ---- status from the iPad ----
 let st = { pos: 0, auto: 0, jogMax: 0.2, line: 0.02, eta: null, phase: 'idle', count: null, w: 1180, h: 820 };
-let posEst = 0, statusCount = 0, lastSeen = -1e9, online = true;
+let posEst = 0, statusCount = 0, lastSeen = -1e9, online = true, dragging = false, holdStatusUntil = 0;
 const onStatus = (v) => {
   if (!v) return;
   st = { ...st, ...v };
   statusCount++;
   if (statusCount > 1) lastSeen = performance.now();     // the first value may be old data left in the room
-  posEst = statusCount <= 2 ? st.pos : posEst + (st.pos - posEst) * 0.35;
+  if (statusCount <= 2) posEst = st.pos;
+  else if (!dragging && performance.now() > holdStatusUntil) posEst = posEst + (st.pos - posEst) * 0.35;   // not while dragging or just after (the iPad's report is older than the pad)
   paintStatus(); refresh();
 };
 const seen =() => performance.now() - lastSeen < 4000;
@@ -262,6 +264,7 @@ setInterval(paintStatus, 1000);
 
 function paint() {
   paints.forEach((p) => p());
+  setHint();
   $('play').innerHTML = s.playing ? ICON.pause + 'Pause' : ICON.play + 'Play';
   refresh();
 }
@@ -309,23 +312,30 @@ const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
 let jogR = 0, down = null, armTimer = 0, armed = false, moved = false, jogTimer = 0;
 const sendJog = () => sync.set('jog', { v: +jogR.toFixed(2), t: Date.now() });
+const sendSeek = () => { if (down) down.last = performance.now(); sync.set('cmd', { type: 'seek', pos: +posEst.toFixed(5), t: Date.now() }); };
 const step = (dir) => { posEst = clamp01(posEst + dir * st.line); sync.set('cmd', { type: 'step', dir, t: Date.now() }); };
-function arm() { if (!down || armed) return; armed = true; ci.classList.add('is-armed'); jogTimer = setInterval(sendJog, 100); sendJog(); }
+function arm() { if (!down || armed || down.drag) return; armed = true; ci.classList.add('is-armed'); jogTimer = setInterval(sendJog, 100); sendJog(); }
 pad.addEventListener('pointerdown', (e) => {
   if (e.target.closest('.p-pad__h')) return;
   pad.setPointerCapture(e.pointerId);
   const r = pad.getBoundingClientRect();
-  down = { x: e.clientX - r.left, y: e.clientY - r.top, cy: e.clientY, t: performance.now() };
-  armed = false; moved = false; jogR = 0;
+  down = { x: e.clientX - r.left, y: e.clientY - r.top, cy: e.clientY, t: performance.now(), drag: !s.playing, p0: posEst, last: 0 };   // paused: drag scrolls the text; playing: hold and drag = speed
+  armed = false; moved = false; jogR = 0; dragging = false;
   ci.style.left = down.x + 'px'; ci.style.top = down.y + 'px';
   ci.classList.remove('is-armed', 'is-push'); ci.style.setProperty('--r', 0);
   pad.classList.add('is-touch');
-  armTimer = setTimeout(arm, cssMs('--dur-arm', 200));
+  if (!down.drag) armTimer = setTimeout(arm, cssMs('--dur-arm', 200));
 });
 pad.addEventListener('pointermove', (e) => {
   if (!down) return;
   const dy = e.clientY - down.cy;
-  if (Math.abs(dy) > 10) { moved = true; arm(); }
+  if (Math.abs(dy) > 10) { moved = true; if (down.drag) dragging = true; else arm(); }
+  if (dragging) {                                           // paused: the text follows the finger 1:1 (finger up = text up = forward)
+    const k = padV.box.clientWidth / iPad().W;
+    posEst = clamp01(down.p0 - dy / k / padV.content);
+    if (performance.now() - down.last > 60) sendSeek();
+    return;
+  }
   if (armed) {
     const r = Math.max(-1, Math.min(1, -dy / 90));          // push up = forward
     jogR = Math.abs(r) < 0.05 ? 0 : r;
@@ -338,8 +348,9 @@ function endTouch() {
   clearTimeout(armTimer); clearInterval(jogTimer);
   const wasTap = !armed && !moved && performance.now() - down.t < cssMs('--dur-arm', 200);
   if (wasTap) step(down.y < pad.clientHeight / 2 ? -1 : 1);
+  if (dragging) { sendSeek(); holdStatusUntil = performance.now() + 600; }   // last position, then ignore the iPad's older reports for a moment
   if (armed) { jogR = 0; sendJog(); setTimeout(sendJog, 150); }   // let go: stop (sent twice in case one is lost)
-  down = null; armed = false; jogR = 0;
+  down = null; armed = false; jogR = 0; dragging = false;
   ci.classList.remove('is-armed', 'is-push'); au.classList.remove('on'); ad.classList.remove('on'); pad.classList.remove('is-touch');
 }
 pad.addEventListener('pointerup', endTouch); pad.addEventListener('pointercancel', endTouch);
