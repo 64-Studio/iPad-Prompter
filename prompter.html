@@ -161,7 +161,7 @@ function loop(now) {
     const h = contentH(), autoPx = s.speed * s.fontSize * 0.25;
     sync.set('status', {
       pos: +(pos / h).toFixed(4), auto: auto ? +(auto / h).toFixed(5) : 0, jogMax: +(5 * lineH() / h).toFixed(5), line: +(lineH() / h).toFixed(5),
-      eta: auto ? Math.round((h - pos) / autoPx) : null, phase, count: phase === 'count' ? countLabel : null, t: Date.now(),
+      eta: auto ? Math.round((h - pos) / autoPx) : null, phase, count: phase === 'count' ? countLabel : null, w: innerWidth, h: innerHeight, t: Date.now(),
     });
   }
   requestAnimationFrame(loop);

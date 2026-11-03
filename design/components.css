@@ -1,4 +1,4 @@
-/* iPad Prompter design system v1.1 · 3 Nov 2026 · FROZEN. Component styles, prefix .p- . Reads only tokens.css variables. */
+/* iPad Prompter design system v1.2 · 4 Nov 2026 · FROZEN. Component styles, prefix .p- . Reads only tokens.css variables. */
 .p-demo{padding:var(--space-4);display:flex;flex-wrap:wrap;gap:var(--space-4);align-items:flex-start;color:var(--text);font-family:var(--font-ui)}
 .p-col{display:flex;flex-direction:column;gap:var(--space-2)}
 .p-cap{font:400 13px/18px var(--font-ui);color:var(--text-muted)}
@@ -78,3 +78,16 @@
 .p-pad__c.is-armed.is-push{border-color:var(--text)}
 .p-pad__c svg.on{stroke:var(--text)}
 @media (prefers-reduced-motion:reduce){.p-btn,.p-play,.p-step__btn,.p-toggle__track,.p-toggle__track::after,.p-seg,.p-count__d,.p-pad__c,.p-pad__hint{transition-duration:150ms}}
+
+/* v1.2 · Preview: a miniature of the iPad reading view (set up in JS: scaled .p-preview__screen). Switch: two-way view toggle. */
+.p-preview{position:relative;box-sizing:border-box;overflow:hidden;height:150px;border-radius:var(--radius-md);border:1.5px solid var(--line-strong);background:var(--stage);pointer-events:none}
+.p-preview__screen{position:absolute;left:0;top:0;transform-origin:0 0}
+.p-preview__text{position:absolute;left:0;right:0;top:0;box-sizing:border-box;white-space:pre-wrap;overflow-wrap:break-word;font-family:var(--font-script);font-weight:500;color:var(--script);will-change:transform}
+.p-preview__marker{position:absolute;left:0;right:0;height:var(--marker);background:var(--script)}
+.p-preview__marker::before{content:"";position:absolute;left:0;top:-9px;border-left:16px solid var(--script);border-top:10px solid transparent;border-bottom:10px solid transparent}
+.p-preview__marker.is-live{background:var(--live)}
+.p-preview__marker.is-live::before{border-left-color:var(--live)}
+.p-switch{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-2)}
+.p-switch__btn{min-height:var(--tap-min);padding:0 var(--space-3);border-radius:var(--radius-md);border:1.5px solid var(--line-strong);background:var(--surface-2);color:var(--text);font:500 16px/22px var(--font-ui);cursor:pointer}
+.p-switch__btn[aria-pressed="true"]{background:var(--text);color:var(--bg);border-color:var(--text)}
+.p-switch__btn:focus-visible{outline:none;box-shadow:var(--focus-ring)}

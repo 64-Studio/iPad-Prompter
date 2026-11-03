@@ -51,6 +51,13 @@
   .look__body { overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: var(--space-5);
                 padding: var(--space-2) var(--space-4) calc(var(--space-5) + env(safe-area-inset-bottom)); }
   .group { display: flex; flex-direction: column; gap: var(--space-2); }
+  .look__top { display: flex; flex-direction: column; gap: var(--space-2); position: sticky; top: 0; z-index: 2; background: var(--surface-1); padding: var(--space-2) 0; margin-top: calc(-1 * var(--space-2)); }
+  /* Phone: one box, switch between Preview and Script text. */
+  @media (max-width: 899px) {
+    .look__top .group > .p-cap { display: none; }
+    .look[data-view="pv"] #textBox, .look[data-view="tx"] #pvBox { display: none; }
+    .look__top .ta { height: 150px; min-height: 150px; max-height: none; resize: none; }
+  }
   .group > .p-cap { text-transform: none; }
   .ta { width: 100%; box-sizing: border-box; min-height: 140px; max-height: 34dvh; resize: vertical; padding: var(--space-3); user-select: text; -webkit-user-select: text;
         font: 500 16px/1.5 var(--font-script); color: var(--text); background: var(--surface-2); border: 1.5px solid var(--line-strong); border-radius: var(--radius-md); }
@@ -75,6 +82,8 @@
     .row { grid-template-columns: 1fr; }
     .speed { max-width: 420px; }
     .ta { min-height: 200px; }
+    .look__top { position: static; margin-top: 0; padding: 0; }
+    .p-switch { display: none; }
     .keys { display: block; }
   }
 </style>
@@ -113,11 +122,15 @@
   </main>
 
   <div class="dim" id="dim"></div>
-  <aside class="look" id="look" aria-label="Look and script">
+  <aside class="look" id="look" data-view="pv" aria-label="Look and script">
     <div class="grip" id="grip"><i></i></div>
     <div class="look__head"><h2>Look</h2><button class="p-btn" id="closeLook"></button></div>
     <div class="look__body" id="lookBody">
-      <div class="group"><span class="p-cap">Script text</span><textarea class="ta" id="text" spellcheck="false" placeholder="Paste or type your script here (ქართული / English)"></textarea></div>
+      <div class="look__top">
+        <div class="p-switch" role="group" aria-label="Look view"><button class="p-switch__btn" id="swPv" aria-pressed="true">Preview</button><button class="p-switch__btn" id="swTx" aria-pressed="false">Script text</button></div>
+        <div class="group" id="pvBox"><span class="p-cap">Preview, as on the iPad</span><div class="p-preview" id="pv" aria-hidden="true"><div class="p-preview__screen" id="pvs"><div class="p-preview__text" id="pvt"></div><div class="p-preview__marker" id="pvm"></div></div></div></div>
+        <div class="group" id="textBox"><span class="p-cap">Script text</span><textarea class="ta" id="text" spellcheck="false" placeholder="Paste or type your script here (ქართული / English)"></textarea></div>
+      </div>
       <div class="group" id="steppers"></div>
       <div class="toggles" id="toggles"></div>
       <p class="p-cap keys">Keys: Space play or pause · ↑ ↓ speed · 0 back to top</p>
@@ -203,7 +216,7 @@ const onState = (v) => {
 let td; text.oninput = () => { clearTimeout(td); td = setTimeout(() => push({ text: text.value }), 300); };
 
 // ---- status from the iPad ----
-let st = { pos: 0, auto: 0, jogMax: 0.2, line: 0.02, eta: null, phase: 'idle', count: null };
+let st = { pos: 0, auto: 0, jogMax: 0.2, line: 0.02, eta: null, phase: 'idle', count: null, w: 1180, h: 820 };
 let posEst = 0, statusCount = 0, lastSeen = -1e9, online = true;
 const onStatus = (v) => {
   if (!v) return;
@@ -211,7 +224,7 @@ const onStatus = (v) => {
   statusCount++;
   if (statusCount > 1) lastSeen = performance.now();     // the first value may be old data left in the room
   posEst = statusCount <= 2 ? st.pos : posEst + (st.pos - posEst) * 0.35;
-  paintStatus();
+  paintStatus(); paintPreview();
 };
 const seen =() => performance.now() - lastSeen < 4000;
 const fmtTime = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
@@ -354,8 +367,34 @@ addEventListener('keydown', (e) => {
 });
 addEventListener('keyup', (e) => { if (e.code === 'Space' && !typing(e.target)) e.preventDefault(); });   // stop a focused button firing a second click
 
+// ---- Look: Preview of the iPad screen (same size, spacing, margins, scaled down) + phone view switch ----
+const setView = (v) => { $('look').dataset.view = v; $('swPv').setAttribute('aria-pressed', String(v === 'pv')); $('swTx').setAttribute('aria-pressed', String(v === 'tx')); paintPreview(); };
+$('swPv').onclick = () => setView('pv');
+$('swTx').onclick = () => setView('tx');
+const PV_TOP = 30;                           // px from the top of the preview to the reading line
+let pvKey = '', pvContent = 1;
+function paintPreview() {
+  const box = $('pv').clientWidth; if (!box) return;           // hidden (Script text view)
+  const W = st.w || 1180, H = st.h || 820, k = box / W, startY = s.startLine / 100 * H, pt = Math.round(startY) + 4;
+  const key = [s.text, s.fontSize, s.lineSpacing, s.margin, s.startLine, s.readingLine, W, H, box].join('|');
+  if (key !== pvKey) {                                         // restyle only when something changed
+    pvKey = key;
+    $('pvs').style.cssText = `width:${W}px;height:${H}px;transform:translateY(${PV_TOP - startY * k}px) scale(${k})`;
+    const t = $('pvt');
+    t.textContent = s.text || 'Paste your script under Script text.';
+    t.style.fontSize = s.fontSize + 'px'; t.style.lineHeight = String(s.lineSpacing);
+    t.style.padding = `${pt}px ${s.margin / 100 * W}px ${H}px`;
+    pvContent = Math.max(1, t.scrollHeight - pt - H);
+    $('pvm').style.top = (startY - 1.5) + 'px'; $('pvm').hidden = !s.readingLine;
+  }
+  $('pvt').style.transform = `translateY(${-(st.pos || 0) * pvContent}px)`;   // follow the iPad's position
+  $('pvm').classList.toggle('is-live', st.phase === 'scroll');
+}
+paints.push(paintPreview);
+new ResizeObserver(() => paintPreview()).observe($('pv'));
+
 addEventListener('resize', layoutPad);
-document.fonts.ready.then(() => { layoutPad(); });
+document.fonts.ready.then(() => { layoutPad(); pvKey = ''; paintPreview(); });
 // Subscribe last: in local test mode the callbacks run at once and need everything above to exist.
 sync.onConnection((ok) => { online = ok; paintStatus(); });
 sync.on('state', onState);
