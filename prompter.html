@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ka">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Prompter — screen</title>
+<link rel="preconnect" href="https://fonts.gstatic.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Georgian:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  html, body { margin:0; height:100%; background:#000; color:#fff; overflow:hidden; }
+  #stage { position:fixed; inset:0; }
+  #stage.mirror { transform:scaleX(-1); }
+  #text { position:absolute; left:0; right:0; top:0; white-space:pre-wrap; overflow-wrap:break-word;
+          font-family:'Noto Sans Georgian', system-ui, sans-serif; line-height:1.4; will-change:transform; }
+  #line { position:fixed; left:0; right:0; top:33%; border-top:2px solid rgba(255,80,80,.6); pointer-events:none; }
+  #overlay { position:fixed; inset:0; background:#000; display:grid; place-items:center; text-align:center; font:20px system-ui; z-index:2; }
+  #overlay b { font-size:96px; letter-spacing:12px; display:block; }
+  #dot { position:fixed; right:10px; bottom:10px; width:10px; height:10px; border-radius:50%; background:#c33; z-index:3; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="text"></div></div>
+<div id="line"></div>
+<div id="dot"></div>
+<div id="overlay"><div>Room code<b id="code"></b><span id="mode"></span><br><br>Tap anywhere to start</div></div>
+
+<script type="module">
+import { connect, getRoom } from './sync.js';
+
+const room = getRoom();
+const $ = (id) => document.getElementById(id);
+$('code').textContent = room;
+
+const s = { text: 'Paste your script on the remote.', fontSize: 64, speed: 3, playing: false, mirror: false, margin: 8 };
+let pos = 0, jogV = 0, lastJog = 0, last = performance.now(), lastReport = 0;
+
+const sync = await connect(room);
+$('mode').textContent = sync.mode === 'local' ? '(local test mode)' : '';
+sync.onConnection((ok) => $('dot').style.background = ok ? '#2a2' : '#c33');
+
+const textEl = $('text');
+function render() {
+  textEl.textContent = s.text;
+  textEl.style.fontSize = s.fontSize + 'px';
+  textEl.style.padding = `${innerHeight * 0.33}px ${s.margin}vw ${innerHeight}px`;
+  $('stage').classList.toggle('mirror', !!s.mirror);
+}
+const maxPos = () => Math.max(0, textEl.scrollHeight - innerHeight);
+
+sync.on('state', (v) => { if (v) { Object.assign(s, v); render(); } });
+sync.on('jog', (v) => { if (v) { jogV = v.v || 0; lastJog = performance.now(); } });
+sync.on('cmd', (v) => {
+  if (!v) return;
+  if (v.type === 'top') pos = 0;
+  if (v.type === 'seek') pos = v.pos * maxPos();
+});
+
+// Scrolling runs locally on the iPad; the remote only sends commands.
+function loop(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (now - lastJog > 400) jogV = 0;                       // jog expires if the remote goes quiet
+  const auto = s.playing ? s.speed * s.fontSize * 0.25 : 0; // px/sec, scales with font size
+  pos = Math.min(maxPos(), Math.max(0, pos + (auto + jogV) * dt));
+  textEl.style.transform = `translate3d(0, ${-pos}px, 0)`;
+  if (now - lastReport > 250) {                            // report position ~4x/sec
+    lastReport = now;
+    const max = maxPos();
+    sync.set('status', { pos: max ? +(pos / max).toFixed(4) : 0, t: Date.now() });
+  }
+  requestAnimationFrame(loop);
+}
+
+$('overlay').onclick = async () => {
+  $('overlay').style.display = 'none';
+  try { await navigator.wakeLock?.request('screen'); } catch {}
+  try { await document.documentElement.requestFullscreen?.(); } catch {}
+};
+addEventListener('resize', render);
+render();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

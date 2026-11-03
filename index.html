@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ka">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prompter</title>
+<style>
+  body { font-family: system-ui, sans-serif; background:#111; color:#eee; display:grid; place-items:center; min-height:100vh; margin:0; }
+  .box { display:grid; gap:16px; width:min(360px, 90vw); }
+  button, input { font-size:20px; padding:14px; border-radius:10px; border:0; }
+  input { text-align:center; letter-spacing:6px; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h2>Prompter</h2>
+  <button id="p">This device is the prompter (iPad)</button>
+  <hr style="width:100%;opacity:.2">
+  <input id="code" inputmode="numeric" maxlength="4" placeholder="0000">
+  <button id="r">Join as remote</button>
+</div>
+<script>
+  p.onclick = () => location.href = 'prompter.html?room=' + String(Math.floor(1000 + Math.random() * 9000));
+  r.onclick = () => code.value.length === 4 && (location.href = 'remote.html?room=' + code.value);
+</script>
+</body>
+</html>
